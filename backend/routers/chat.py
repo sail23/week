@@ -176,13 +176,20 @@ async def _handle_report_intent(req: ChatRequest, session: dict):
             user_message = f"请根据以上信息，生成一份专业的{type_name}。"
 
             full_response = ""
+            pending = ""
             async for token in ai_service.generate_stream(
                 user_message=user_message,
                 system_prompt=system_prompt,
                 history=[],
             ):
                 full_response += token
-                yield ServerSentEvent(event="token", data=token)
+                if not token.strip():
+                    pending += token
+                else:
+                    yield ServerSentEvent(event="token", data=pending + token)
+                    pending = ""
+            if pending:
+                yield ServerSentEvent(event="token", data=pending)
 
             history.append({"role": "assistant", "content": full_response})
             yield ServerSentEvent(event="done", data="")
@@ -220,13 +227,20 @@ async def _handle_general_intent(req: ChatRequest, session: dict, use_kb: bool =
 
             full_response = ""
 
+            pending = ""
             async for token in ai_service.generate_stream(
                 user_message=req.message,
                 system_prompt=system_prompt,
                 history=history[:-1],
             ):
                 full_response += token
-                yield ServerSentEvent(event="token", data=token)
+                if not token.strip():
+                    pending += token
+                else:
+                    yield ServerSentEvent(event="token", data=pending + token)
+                    pending = ""
+            if pending:
+                yield ServerSentEvent(event="token", data=pending)
 
             history.append({"role": "assistant", "content": full_response})
             yield ServerSentEvent(event="done", data="")

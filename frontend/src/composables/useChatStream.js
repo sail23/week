@@ -115,106 +115,73 @@ export function useChatStream() {
     } catch (_) {}
   }
 
+  function _dispatchEvent(onEvent, eventType, data) {
+    if (!data && eventType !== 'error') return
+
+    if (data.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(data)
+        if (parsed.content) {
+          onEvent(eventType, parsed.content)
+        } else {
+          onEvent(eventType, data)
+        }
+      } catch (_) {
+        onEvent(eventType, data)
+      }
+    } else {
+      onEvent(eventType, data)
+    }
+  }
+
   async function _readSSEResponse(response, onEvent) {
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     let currentEvent = null
+    let dataLines = []
+
+    function flushEvent() {
+      if (dataLines.length > 0) {
+        const data = dataLines.join('\n')
+        dataLines = []
+        if (data !== '[DONE]') {
+          _dispatchEvent(onEvent, currentEvent, data)
+        }
+      }
+      currentEvent = null
+    }
 
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
-
       const lines = buffer.split(/\r?\n/)
       buffer = lines.pop() || ''
 
       for (const line of lines) {
-        const trimmed = line.trimEnd()
-        if (!trimmed) continue
-
-        if (trimmed.startsWith('event:')) {
-          currentEvent = trimmed.slice(6).trim()
+        // Strip trailing \r (Windows line ending artifact)
+        const clean = line.endsWith('\r') ? line.slice(0, -1) : line
+        if (!clean) {
+          flushEvent()
           continue
         }
-        if (trimmed.startsWith('data:')) {
+
+        if (clean.startsWith('event:')) {
+          currentEvent = clean.slice(6).trimStart() || null
+          continue
+        }
+        if (clean.startsWith('data:')) {
           // Remove exactly one leading space (SSE "field: value" format)
-          let rawData = trimmed.slice(5).replace(/^ /, '')
-          if (rawData === '[DONE]') continue
-
-          // Empty data line in a token event: \n token lost to SSE framing
-          if (!rawData) {
-            if (currentEvent === 'token') {
-              onEvent(currentEvent, '\n')
-            } else if (currentEvent !== 'error') {
-              continue
-            }
-          }
-
-          if (!rawData) {
-            // Only error events with empty data reach here
-            onEvent(currentEvent, '')
-            continue
-          }
-
-          if (rawData.startsWith('{')) {
-            try {
-              const parsed = JSON.parse(rawData)
-              if (parsed.content) {
-                onEvent(currentEvent, parsed.content)
-              } else {
-                onEvent(currentEvent, rawData)
-              }
-            } catch (_) {
-              onEvent(currentEvent, rawData)
-            }
-          } else {
-            onEvent(currentEvent, rawData)
-          }
-        }
-      }
-    }
-
-    if (buffer) {
-      const lines = buffer.trimEnd().split(/\r?\n/)
-      for (const line of lines) {
-        const trimmed = line.trimEnd()
-        if (!trimmed) continue
-        if (trimmed.startsWith('event:')) {
-          currentEvent = trimmed.slice(6).trim()
+          dataLines.push(clean.slice(5).replace(/^ /, ''))
           continue
         }
-        if (trimmed.startsWith('data:')) {
-          let rawData = trimmed.slice(5).replace(/^ /, '')
-          if (rawData === '[DONE]') continue
-
-          if (!rawData) {
-            if (currentEvent === 'token') {
-              onEvent(currentEvent, '\n')
-            } else if (currentEvent !== 'error') {
-              continue
-            }
-          }
-
-          if (!rawData) {
-            onEvent(currentEvent, '')
-            continue
-          }
-
-          if (rawData.startsWith('{')) {
-            try {
-              const parsed = JSON.parse(rawData)
-              onEvent(currentEvent, parsed.content || rawData)
-            } catch (_) {
-              onEvent(currentEvent, rawData)
-            }
-          } else {
-            onEvent(currentEvent, rawData)
-          }
-        }
+        // Other SSE fields (id, retry) — ignored
       }
     }
+
+    flushEvent()
   }
 
   return {
