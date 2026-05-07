@@ -259,6 +259,8 @@ class VectorStore:
         scored.sort(key=lambda x: x[2], reverse=True)
         return scored[:top_k]
 
+    MIN_COSINE_SIMILARITY = 0.30
+
     def search(self, query: str, top_k: int = 5, alpha: float = 0.5, rrf_k: int = 20) -> List[Tuple[str, str, float]]:
         """
         混合检索：向量 + BM25 Reciprocal Rank Fusion (RRF)。
@@ -270,12 +272,15 @@ class VectorStore:
         """
         # 1. 向量检索（取更多候选）
         vec_results = self._vector_search(query, top_k * 3)
+
+        # 硬性过滤：余弦相似度低于阈值的 chunk 不参与 RRF 融合
+        vec_results = [(cid, content, s) for cid, content, s in vec_results if s >= self.MIN_COSINE_SIMILARITY]
+
         # 2. BM25 检索
         bm25_scores: Dict[str, float] = self.bm25_store.search(query, top_k * 3)
 
-        # 过滤：最大余弦相似度低于阈值时降低 BM25 权重
         max_cosine = max((s for _, _, s in vec_results), default=0.0)
-        if max_cosine < 0.25 and bm25_scores:
+        if max_cosine < 0.35 and bm25_scores:
             alpha = max(0.0, alpha - 0.3)
 
         # 3. 构建 RRF 融合分
@@ -296,32 +301,22 @@ class VectorStore:
         cursor = self._conn.cursor()
         sorted_ids = sorted(fused.keys(), key=lambda c: fused[c], reverse=True)
 
-        # 如果所有分数都很低，只返回 top 1
         max_fused = fused[sorted_ids[0]] if sorted_ids else 0.0
-        limit = 1 if max_cosine < 0.25 and max_fused < 0.05 else top_k
 
         results = []
-        for cid in sorted_ids[:limit]:
+        for cid in sorted_ids[:top_k]:
             cursor.execute("SELECT content FROM chunks WHERE id = ?", (cid,))
             row = cursor.fetchone()
             if row:
                 results.append((cid, row[0], fused[cid]))
 
-        # 归一化到 [0, 100]，让 top 1 显示高百分比，排名递减
-        if len(results) > 1:
-            min_score = results[-1][2]
-            max_score = results[0][2]
-            score_range = max_score - min_score
-            if score_range > 0:
-                results = [
-                    (cid, content, 20 + 80 * (score - min_score) / score_range)
-                    for cid, content, score in results
-                ]
-            else:
-                results = [(cid, content, 80.0) for cid, content, score in results]
-        elif results:
-            cid, content, score = results[0]
-            results = [(cid, content, 85.0)]
+        # 用 max_cosine 做参考缩放，保留真实相关性信号
+        if results and max_fused > 0:
+            scale = max_cosine * 200
+            results = [
+                (cid, content, round((score / max_fused) * scale, 1))
+                for cid, content, score in results
+            ]
 
         return results
 

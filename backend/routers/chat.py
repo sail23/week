@@ -209,7 +209,10 @@ async def _handle_general_intent(req: ChatRequest, session: dict, use_kb: bool =
                     event="kb_context",
                     data=json.dumps({"chunks": rag_chunks, "context": rag_context}, ensure_ascii=False),
                 )
-                system_prompt = get_rag_system_prompt(rag_context)
+                if rag_context.strip():
+                    system_prompt = get_rag_system_prompt(rag_context)
+                else:
+                    system_prompt = get_chat_system_prompt()
             else:
                 system_prompt = get_chat_system_prompt()
 

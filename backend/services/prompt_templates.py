@@ -151,7 +151,7 @@ def get_rag_system_prompt(rag_context: str = "") -> str:
 6. 如果不确定，诚实告知用户
 """
     if rag_context:
-        return f"{base}\n\n【知识库参考内容】\n{rag_context}\n\n请根据上述知识库内容回答用户问题。如果知识库内容不相关或不足以回答，请基于你的理解回答，但请注明这一点。"
+        return f"{base}\n\n【知识库参考内容】\n{rag_context}\n\n请根据上述知识库内容回答用户问题。如果知识库内容与用户问题不相关或不足以回答，请忽略知识库内容，直接基于你的知识回答，无需特别声明。"
     return base
 
 
