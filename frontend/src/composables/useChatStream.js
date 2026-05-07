@@ -139,7 +139,7 @@ export function useChatStream() {
           continue
         }
         if (trimmed.startsWith('data:')) {
-          const rawData = trimmed.slice(5).trim()
+          const rawData = trimmed.slice(5).trimStart()
           if (rawData === '[DONE]') continue
           if (!rawData && currentEvent !== 'error') continue
 
@@ -171,7 +171,7 @@ export function useChatStream() {
           continue
         }
         if (trimmed.startsWith('data:')) {
-          const rawData = trimmed.slice(5).trim()
+          const rawData = trimmed.slice(5).trimStart()
           if (rawData === '[DONE]') continue
           if (!rawData && currentEvent !== 'error') continue
           if (rawData.startsWith('{')) {
