@@ -139,9 +139,24 @@ export function useChatStream() {
           continue
         }
         if (trimmed.startsWith('data:')) {
-          const rawData = trimmed.slice(5).trimStart()
+          // Remove exactly one leading space (SSE "field: value" format)
+          let rawData = trimmed.slice(5).replace(/^ /, '')
           if (rawData === '[DONE]') continue
-          if (!rawData && currentEvent !== 'error') continue
+
+          // Empty data line in a token event: \n token lost to SSE framing
+          if (!rawData) {
+            if (currentEvent === 'token') {
+              onEvent(currentEvent, '\n')
+            } else if (currentEvent !== 'error') {
+              continue
+            }
+          }
+
+          if (!rawData) {
+            // Only error events with empty data reach here
+            onEvent(currentEvent, '')
+            continue
+          }
 
           if (rawData.startsWith('{')) {
             try {
@@ -171,9 +186,22 @@ export function useChatStream() {
           continue
         }
         if (trimmed.startsWith('data:')) {
-          const rawData = trimmed.slice(5).trimStart()
+          let rawData = trimmed.slice(5).replace(/^ /, '')
           if (rawData === '[DONE]') continue
-          if (!rawData && currentEvent !== 'error') continue
+
+          if (!rawData) {
+            if (currentEvent === 'token') {
+              onEvent(currentEvent, '\n')
+            } else if (currentEvent !== 'error') {
+              continue
+            }
+          }
+
+          if (!rawData) {
+            onEvent(currentEvent, '')
+            continue
+          }
+
           if (rawData.startsWith('{')) {
             try {
               const parsed = JSON.parse(rawData)
