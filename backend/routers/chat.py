@@ -171,6 +171,8 @@ async def _handle_report_intent(req: ChatRequest, session: dict):
 
             # ---- 阶段二：生成结构化报告（流式） ----
             system_prompt = get_report_system_prompt(report_type, extracted_data, req.message)
+            type_names = {"daily": "日报", "weekly": "周报", "monthly": "月报", "quarterly": "季度报告", "custom": "工作报告"}
+            type_name = type_names.get(report_type, "工作报告")
             user_message = f"请根据以上信息，生成一份专业的{type_name}。"
 
             full_response = ""
