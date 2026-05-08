@@ -8,12 +8,15 @@ from services.vector_store import vector_store
 
 DEFAULT_TOP_K = 5
 MIN_SCORE = 20.0
+MAX_CONTEXT_CHARS = 2000
 
 
 def retrieve_context(query: str, top_k: int = DEFAULT_TOP_K) -> str:
     """
     检索最相关的知识库片段，拼接为 context 字符串返回。
     如果没有检索结果或所有结果分数低于阈值，返回空字符串。
+    按分数从高到低选取 chunk，累计不超过 MAX_CONTEXT_CHARS，
+    避免知识库内容过多导致 prompt 臃肿。
     """
     if not query or not query.strip():
         return ""
@@ -24,9 +27,14 @@ def retrieve_context(query: str, top_k: int = DEFAULT_TOP_K) -> str:
             return ""
 
         chunks = []
+        total = 0
         for chunk_id, content, score in results:
-            if score >= MIN_SCORE:
-                chunks.append(content)
+            if score < MIN_SCORE:
+                continue
+            if total + len(content) > MAX_CONTEXT_CHARS and chunks:
+                break
+            chunks.append(content)
+            total += len(content)
 
         if not chunks:
             return ""
