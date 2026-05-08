@@ -261,13 +261,14 @@ class VectorStore:
 
     MIN_COSINE_SIMILARITY = 0.30
 
-    def search(self, query: str, top_k: int = 5, alpha: float = 0.5, rrf_k: int = 20) -> List[Tuple[str, str, float]]:
+    def search(self, query: str, top_k: int = 5, alpha: float = 0.2, rrf_k: int = 40) -> List[Tuple[str, str, float]]:
         """
         混合检索：向量 + BM25 Reciprocal Rank Fusion (RRF)。
 
         RRF 融合公式：score = sum(weight / (k + rank))。
-        k=20：比标准 k=60 更激进地奖励高排名结果，提升 BM25 关键词命中的优势。
-        alpha: 向量与 BM25 的权重（alpha 越大 BM25 权重越高）。
+        k=40：更平滑的排名衰减，减少极端排名差异。
+        alpha=0.2：向量权重 80%，BM25 权重 20%。以向量语义匹配为主，
+        BM25 仅作为关键词命中的辅助信号，避免 n-gram 噪声主导排序。
         alpha=0.0 表示纯向量，alpha=1.0 表示纯 BM25。
         """
         # 1. 向量检索（取更多候选）
