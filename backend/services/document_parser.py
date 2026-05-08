@@ -23,40 +23,45 @@ def parse_file(file_path: str, file_name: str) -> str:
         return ""
 
 
-def chunk_text(text: str, chunk_size: int = 350, overlap: int = 50) -> List[str]:
+def chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> List[str]:
     """
     将长文本按句子边界切分为语义连贯的块。
-    1. 按句子边界切分（。！？.!?；）
-    2. 将句子逐条累积，满约 chunk_size 字符时成块
-    3. 单句超过 chunk_size 字符 → 按中文逗号/顿号进一步拆分
-    4. 相邻块之间加 overlap 字符重叠
+    1. 先按段落边界（双换行）切分，保持段落完整性
+    2. 段内按句子边界切分（。！？.!?；）
+    3. 将句子逐条累积，满约 chunk_size 字符时成块
+    4. 单句超过 chunk_size 字符 → 按中文逗号/顿号进一步拆分
+    5. 相邻块之间加双向 overlap 字符重叠
     返回 List[str]。
     """
     if not text or not text.strip():
         return []
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # Step 1: Split into sentences by 。！？.!?；
-    sentences = _split_into_sentences(text)
+    # Step 1: Split into paragraphs first (preserve paragraph integrity)
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
 
-    # Step 2: Accumulate sentences into chunks
-    chunks = _pack_sentences_into_chunks(sentences, chunk_size)
+    all_chunks = []
+    for para in paragraphs:
+        # Step 2: Split paragraph into sentences
+        sentences = _split_into_sentences(para)
 
-    # Step 3: Add overlap between consecutive chunks
-    result = _add_overlap(chunks, overlap)
+        # Step 3: Accumulate sentences into chunks
+        para_chunks = _pack_sentences_into_chunks(sentences, chunk_size)
+        all_chunks.extend(para_chunks)
+
+    # Step 4: Add bidirectional overlap between consecutive chunks
+    result = _add_overlap(all_chunks, overlap)
 
     return [c for c in result if c.strip()]
 
 
 def _split_into_sentences(text: str) -> List[str]:
-    """按句子边界切分：。！？.!?；"""
+    """按句子边界切分：。！？.!?；以及换行"""
+    # 段内换行替换为空格
+    text = re.sub(r"\n", " ", text)
+    # 在句子结束标点处切分
     parts = re.split(r"(?<=[。！？.!?；])\s*", text)
-    sentences = []
-    for part in parts:
-        part = part.strip()
-        if part:
-            sentences.append(part)
-    return sentences
+    return [p for p in (p.strip() for p in parts) if p]
 
 
 def _pack_sentences_into_chunks(sentences: List[str], chunk_size: int) -> List[str]:
@@ -121,15 +126,32 @@ def _split_long_sentence(sent: str, chunk_size: int) -> List[str]:
 
 
 def _add_overlap(chunks: List[str], overlap: int) -> List[str]:
-    """在相邻块之间加重叠"""
+    """
+    在相邻块之间加双向重叠，确保每个 chunk 都包含上下文衔接。
+    块 N 会同时包含块 N-1 的尾部和块 N+1 的首部，
+    避免检索结果在关键位置截断。
+    重叠量不超过相邻块长度的一半，防止小块被完全吞并。
+    """
     if len(chunks) <= 1 or overlap <= 0:
         return chunks
-    result = [chunks[0]]
-    for i in range(1, len(chunks)):
-        prev = chunks[i - 1]
-        curr = chunks[i]
-        prefix = prev[-overlap:] if len(prev) > overlap else prev
-        result.append(prefix + curr)
+
+    result = []
+    for i in range(len(chunks)):
+        chunk = chunks[i]
+        # 向前借上下文：前一个块的尾部
+        if i > 0:
+            prev = chunks[i - 1]
+            borrow = min(overlap, len(prev) // 2)
+            if borrow > 0:
+                chunk = prev[-borrow:] + chunk
+        # 向后借上下文：后一个块的首部
+        if i < len(chunks) - 1:
+            next_chunk = chunks[i + 1]
+            borrow = min(overlap, len(next_chunk) // 2)
+            if borrow > 0:
+                chunk = chunk + next_chunk[:borrow]
+        result.append(chunk)
+
     return result
 
 
