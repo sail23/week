@@ -93,25 +93,16 @@ def _init_schema(conn: sqlite3.Connection):
 
 
 def _tokenize_chinese(text: str) -> List[str]:
-    """
-    中文分词（字符 n-gram 滑动窗口）。
-    对每个连续中文序列提取 2-4 字的所有子串作为 token。
-    例如："中华人民共和国" -> ["中华", "中华人", "中华人民", ...]
-    """
+    """中文分词，使用 jieba 精确分词替代 n-gram 滑动窗口。"""
+    import jieba
     tokens = []
-    # 找到所有连续中文序列
-    chinese_seqs = re.finditer(r"[\u4e00-\u9fff]+", text)
-    for match in chinese_seqs:
-        seq = match.group()
-        seq_len = len(seq)
-        for start in range(seq_len):
-            for length in range(2, min(5, seq_len - start + 1)):
-                tokens.append(seq[start:start + length])
-        # 同时保留整个序列
-        if seq_len >= 2:
-            tokens.append(seq)
-    # 保留标点和数字用于英文/数字词
-    tokens.extend(re.findall(r"[a-zA-Z0-9]+", text))
+    for word in jieba.cut(text):
+        word = word.strip()
+        if not word:
+            continue
+        # 保留中文词和英文/数字词，过滤纯标点
+        if re.search(r"[一-鿿]", word) or re.search(r"[a-zA-Z0-9]", word):
+            tokens.append(word)
     return tokens
 
 
