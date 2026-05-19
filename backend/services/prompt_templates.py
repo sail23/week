@@ -1,257 +1,95 @@
 """
 Prompt 模板服务。
-提供意图判断、RAG 系统提示、报告生成提示等模板。
+提供 RAG、闲聊、报告生成等系统提示词。
 """
-import re
+
 
 REPORT_FORMATS = {
-    "daily": """【日报格式模板】
-# 日报
-
-## 日期
-{{date_range}}
-
-## 今日工作总结
-{{main_work}}
-
-## 工作成果
-{{achievements}}
-
-## 遇到的问题与解决方案
-{{problems}}
-
-## 明日计划
-{{next_plan}}
-""",
-    "weekly": """【周报格式模板】
-# 周报
-
-## 时间范围
-{{date_range}}
-
-## 本周工作概述
-{{main_work}}
-
-## 主要工作内容与成果
-{{achievements}}
-
-## 问题与解决方案
-{{problems}}
-
-## 下周工作计划
-{{next_plan}}
-""",
-    "monthly": """【月报格式模板】
-# 月报
-
-## 时间范围
-{{date_range}}
-
-## 本月工作概述
-{{main_work}}
-
-## 主要工作内容与成果
-{{achievements}}
-
-## 问题与解决方案
-{{problems}}
-
-## 下月工作计划
-{{next_plan}}
-""",
-    "quarterly": """【季度报告格式模板】
-# 季度工作报告
-
-## 时间范围
-{{date_range}}
-
-## 本季度工作概述
-{{main_work}}
-
-## 主要工作内容与成果
-{{achievements}}
-
-## 问题与解决方案
-{{problems}}
-
-## 下季度工作计划
-{{next_plan}}
-""",
-    "custom": """【自定义报告格式模板】
-# 工作报告
-
-## 基本信息
-{{date_range}}
-
-## 工作内容
-{{main_work}}
-
-## 成果与收获
-{{achievements}}
-
-## 问题与分析
-{{problems}}
-
-## 后续计划
-{{next_plan}}
-""",
+    "daily": ("日报", "一、今日工作完成情况", "三、明日工作计划", "2026年4月30日"),
+    "weekly": ("周报", "一、本周工作完成情况", "三、下周工作计划", "2026年4月20日-4月26日"),
+    "monthly": ("月报", "一、本月工作完成情况", "三、下月工作计划", "2026年4月"),
+    "quarterly": ("季度工作报告", "一、本季度工作完成情况", "三、下季度工作计划", "2026年Q2"),
+    "custom": ("工作报告", "一、工作完成情况", "三、下一步工作计划", ""),
 }
 
 
+def _report_config(report_type: str):
+    return REPORT_FORMATS.get(report_type, REPORT_FORMATS["weekly"])
+
+
 def get_default_template(report_type: str) -> str:
-    template = REPORT_FORMATS.get(report_type, REPORT_FORMATS["daily"])
-    return f"""你是一个专业的报告生成助手。请严格按照以下格式生成报告，使用 Markdown 格式输出：
+    """表单生成报告时使用的系统提示。"""
+    type_name, module1, module3, default_date = _report_config(report_type)
+    return f"""你是一个专业的工作报告生成助手。请输出干净的中文报告正文。
 
-{template}
+固定版式：
+{type_name}
+{default_date}
 
-要求：
-1. 严格按照上述格式结构生成，不要遗漏任何部分
-2. 基于用户提供的真实信息填充内容，不要编造数据
-3. 语言简洁、专业，适合正式场合使用
-4. 中文输出
-"""
+{module1}
+1、第一项工作内容。
+2、第二项工作内容。
+3、第三项工作内容。
 
+二、存在的问题
+1、存在的问题或风险。
+2、如无明显问题，写“暂无明显问题，后续将持续关注执行过程中的细节风险。”。
 
-def get_intent_detection_system_prompt() -> str:
-    return """你是一个智能助手路由助手。你的任务是根据用户消息判断用户的意图。
+{module3}
+1、下一步计划。
+2、改进或跟进措施。
+3、复盘、验证或协作计划。
 
-用户可能属于以下三种意图之一：
-
-1. **知识问答 (knowledge_qa)**：用户询问公司规章制度、流程、政策等问题。
-   → 请返回 JSON: {"intent": "knowledge_qa"}
-
-2. **报告生成 (report_generate)**：用户要求生成日报、周报、月报、工作报告、工作总结等。
-   → 请返回 JSON: {"intent": "report_generate", "report_type": "daily/weekly/monthly", "missing_params": ["缺失的参数名..."]}
-   → 如果用户已经提供了基本信息（时间范围 + 主要工作内容），missing_params 可以为空列表
-
-3. **日常闲聊 (chat)**：用户进行日常对话，不属于上述两类。
-   → 请返回 JSON: {"intent": "chat"}
-
-注意：
-- 只返回上述 JSON，不要有其他内容
-- 如果不确定意图，优先判断为 chat
-- report_type 可选值：daily（日报）、weekly（周报）、monthly（月报）
-- missing_params 为缺失的必需参数列表，必需参数包括：时间范围、主要工作内容
-"""
+格式要求：
+- 不要输出 Markdown 标题符号或代码块。
+- 编号必须使用中文顿号格式，例如“1、”。
+- 禁止使用英文点号编号。
+- 每条内容 40-90 字，以中文句号结尾。
+- 只输出报告正文，不要解释说明。"""
 
 
 def get_rag_system_prompt(rag_context: str = "") -> str:
-    """
-    知识库问答的 system prompt。
-    如果有 rag_context，将其注入到 prompt 前作为参考。
-    """
-    base = """你是一个专业的公司知识助手，擅长回答关于公司规章制度、流程、政策等方面的问题。
+    """知识库问答的 system prompt。"""
+    base = """你是一个专业、准确的知识库问答助手。
 
 要求：
-1. 回答准确、专业，引用相关制度或政策原文
-2. 如果知识库中有相关内容，优先以知识库为准
-3. 如果知识库中没有相关内容，说明"目前知识库中暂无此信息，建议联系相关部门确认"
-4. 回答用中文，语言简洁有条理
-5. 可以适当引用制度条款，但不要过度引用原文
-6. 如果不确定，诚实告知用户
-"""
+1. 优先根据知识库参考内容回答。
+2. 如果参考内容与问题无关或不足以回答，请忽略参考内容，直接基于你的知识回答。
+3. 回答要简洁、清晰、有条理。
+4. 不确定时要诚实说明。"""
     if rag_context:
-        return f"{base}\n\n【知识库参考内容】\n{rag_context}\n\n请根据上述知识库内容回答用户问题。如果知识库内容与用户问题不相关或不足以回答，请忽略知识库内容，直接基于你的知识回答，无需特别声明。"
+        return f"{base}\n\n【知识库参考内容】\n{rag_context}\n\n请结合上述参考内容回答用户问题。"
     return base
 
 
 def get_chat_system_prompt() -> str:
-    """
-    闲聊的 system prompt。kb_mode=false 时使用，不检索知识库。
-    """
-    return """你是一个友好、智能的助手，可以与用户进行自然、友好的日常对话。
+    """闲聊 system prompt。kb_mode=false 时使用，不检索知识库。"""
+    return """你是一个友好、智能的中文助手。
 
 要求：
-1. 回答用中文，语言自然、亲切、有礼貌
-2. 回答简洁，避免冗长
-3. 可以讨论工作、技术、生活等话题
-4. 如果遇到不确定的问题，诚实告知用户
-5. 适当使用 emoji 或表情，增加亲和力"""
-
-
-REPORT_FORMAT_TEMPLATE = """你是一个专业的{type_name}生成助手。请严格按以下固定格式输出 Markdown 工作报告，不要添加任何额外说明文字。
-
-输出格式：
-# {type_name}
-**{{date_range}}**
-
-## {module1_title}
-1. [条目1]
-2. [条目2]
-3. [条目3]
-
-## 二、存在的问题
-1. [条目1]
-2. [条目2]
-3. [条目3]
-
-## {module3_title}
-1. [条目1]
-2. [条目2]
-3. [条目3]
-
-【强制要求】
-1. 只输出 Markdown 报告正文，禁止输出任何解释、注释、提示语
-2. 每个 ## 二级标题下必须使用有序列表（1. 2. 3.），不得使用纯段落
-3. 列表每个条目内容完整，不少于 20 字
-4. 不省略任何模块，不添加模块以外的内容
-5. 中文输出，语言专业简洁"""
-
-
-def extract_work_prompt(user_message: str) -> str:
-    """
-    构建提炼 prompt，让 LLM 从用户输入中提取工作内容，输出 JSON。
-    一次性调用（非流式），供后续生成报告使用。
-    """
-    return f"""你是一个专业的报告内容提炼助手。你的任务是从用户的输入中提取并整理工作内容，忠实还原用户的描述，不添加、不扩写、不编造。
-
-【用户输入】
-{user_message}
-
-【输出要求】
-请从用户输入中提炼出以下信息，返回标准 JSON 格式：
-{{
-    "main_work": "提炼后的工作内容描述（保留用户的关键信息，适当分段便于阅读）",
-    "problems": "存在的问题，如无则返回空字符串",
-    "next_plan": "下一步工作计划，如无则返回空字符串",
-    "date_range": "时间范围（如：2026年4月 / 本周 / 今日等）",
-    "type": "报告类型（daily/weekly/monthly/quarterly）"
-}}
-
-【注意事项】
-- 只提取用户明确提到的内容，不要推测或补充
-- 如果用户没有提到某项，返回空字符串
-- 直接返回 JSON，不要有任何额外文字"""
+1. 回答自然、亲切、有礼貌。
+2. 内容简洁，不要冗长。
+3. 可以讨论工作、技术、生活等话题。
+4. 遇到不确定的问题时诚实说明。"""
 
 
 def get_report_system_prompt(report_type: str, extracted_data: dict = None, user_message: str = "") -> str:
-    """报告生成的 system prompt，直接根据用户输入扩写生成。"""
-    type_config_map = {
-        "daily":     ("日报",     "## 一、今日工作完成情况", "## 三、明日工作计划",     "2026年4月30日"),
-        "weekly":    ("周报",     "## 一、本周工作完成情况", "## 三、下周工作计划",     "2026年4月20日-4月26日"),
-        "monthly":   ("月报",     "## 一、本月工作完成情况", "## 三、下月工作计划",     "2026年4月"),
-        "quarterly": ("季度工作报告", "## 一、本季度工作完成情况", "## 三、下季度工作计划", "2026年Q2"),
-        "custom":    ("工作报告", "## 一、上月工作完成情况", "## 三、下一步工作计划",    ""),
-    }
-    type_name, module1, module3, default_date = type_config_map.get(
-        report_type, ("周报", "## 一、本周工作完成情况", "## 三、下周工作计划", "")
-    )
+    """报告生成的 system prompt，根据用户输入扩写生成中文报告。"""
+    type_name, module1, module3, default_date = _report_config(report_type)
 
-    # 从提炼数据中获取日期范围，若无则用默认值
     date_range = default_date
     if extracted_data:
         dr = (extracted_data.get("date_range") or "").strip()
         if dr:
             date_range = dr
 
-    # 优先用提炼后的内容，其次用用户原始描述
     raw_work = ""
     if extracted_data:
         raw_work = extracted_data.get("main_work") or ""
     if not raw_work and user_message:
         raw_work = user_message
 
-    return f"""你是一位专业的工作报告撰写专家。请根据以下信息生成一份{type_name}，在用户提供的工作内容基础上进行专业扩写和补充，使报告内容充实、有价值。
+    return f"""你是一位专业的工作报告撰写专家。请根据用户提供的工作内容，生成一份正式、清晰、适合直接提交的{type_name}。
 
 【报告日期】
 {date_range}
@@ -259,108 +97,72 @@ def get_report_system_prompt(report_type: str, extracted_data: dict = None, user
 【用户工作描述】
 {raw_work or "用户未提供具体工作内容，请基于常识生成通用报告。"}
 
-【输出格式 — 必须严格遵守】
-你的回复必须是标准 Markdown 格式，结构如下：
+【输出格式】
+不要输出 Markdown 标题符号，不要输出代码块。
+编号必须使用中文顿号格式，不要使用英文点号编号。
 
-# {type_name}
-**{date_range}**
+请严格按以下版式输出：
+
+{type_name}
+{date_range}
 
 {module1}
-1. （第一项工作的完成情况，在用户内容基础上扩写细节、成果、遇到的挑战等）
-2. （第二项工作的完成情况，同样需要扩写）
-3. （第三项工作的完成情况，如用户未提供第三项则合理推断）
+1、在用户原始工作内容基础上扩写第一项工作，补充具体动作、成果、影响或推进情况，保持一行完整表达。
+2、在用户原始工作内容基础上扩写第二项工作，补充具体问题、处理过程、结果或协作情况，保持一行完整表达。
+3、在用户原始工作内容基础上扩写第三项工作；如果用户未提供第三项，可结合已有内容合理推断后续相关工作。
 
-## 二、存在的问题
-1. （存在的问题，如用户未提及则合理分析可能存在的风险或挑战）
-2. （如无更多问题可写"暂无明显问题"）
+二、存在的问题
+1、结合用户工作内容分析实际存在的问题、风险、阻塞点或需要持续优化的事项。
+2、如果用户没有提到明显问题，可写“暂无明显问题，后续将继续关注执行过程中的细节风险。”。
 
 {module3}
-1. （下一步计划第一项，结合用户工作内容合理推断）
-2. （下一步计划第二项）
-3. （下一步计划第三项）
+1、结合已完成工作安排下一步具体计划，说明要推进的事项、目标或交付结果。
+2、结合存在的问题安排改进措施或跟进计划，避免空泛表达。
+3、补充一项合理的协作、复盘、优化或验证计划。
 
-【强制规则 — 违反任何一条即为不合格】
-- 必须使用 "#" 和 "##" 标题语法，不得省略 # 号
-- 每个 ## 标题下必须使用 "1. 2. 3." 有序列表，严禁使用纯段落叙述
-- 每条列表项必须是独立的完整句子，在用户原意基础上扩写补充，不得只写标题或短语
-- 列表项充分展开，每项40-80字，要有专业细节和具体描述
-- 只输出报告正文，任何解释、客套话、引导语都是不允许的
-- 三个模块缺一不可"""
+【格式铁律】
+- 只输出报告正文，不要解释、客套话、引导语。
+- 绝对不要出现 Markdown 标题符号、Markdown 代码块。
+- 所有编号必须是“1、”这种中文顿号编号，禁止英文点号编号。
+- 每个模块标题独占一行，模块标题后直接换行进入编号列表。
+- 每条编号内容控制在 40-90 字，以中文句号“。”结尾。
+- 不要在编号和正文之间插入多余换行。"""
 
 
 def extract_work_prompt(user_message: str) -> str:
-    """
-    构建提炼 prompt，让 LLM 从用户输入中提取工作内容，输出 JSON。
-    一次性调用（非流式），供后续生成报告使用。
-    """
-    return f"""你是一个专业的报告内容提炼助手。你的任务是从用户的输入中提取并整理工作内容，忠实还原用户的描述，不添加、不扩写、不编造。
+    """构建提炼 prompt，让 LLM 从用户输入中提取工作内容，输出 JSON。"""
+    return f"""你是一个专业的报告内容提炼助手。请只从用户输入中提取工作信息，忠实保留用户表达，不扩写、不编造。
 
 【用户输入】
 {user_message}
 
 【输出要求】
-请从用户输入中提炼出以下信息，返回标准 JSON 格式：
+只返回标准 JSON，不要输出 Markdown，不要输出解释文字。字段如下：
 {{
-    "main_work": "提炼后的工作内容描述（保留用户的关键信息，按自然段落组织，适当换行）",
-    "problems": "存在的问题，如无则返回空字符串",
-    "next_plan": "下一步工作计划，如无则返回空字符串",
-    "date_range": "时间范围（如：2026年4月 / 本周 / 今日等）",
-    "type": "报告类型（daily/weekly/monthly/quarterly）"
+  "main_work": "提炼后的工作内容，保留用户关键事项，可用换行分隔多项工作",
+  "problems": "用户明确提到的问题；没有则返回空字符串",
+  "next_plan": "用户明确提到的下一步计划；没有则返回空字符串",
+  "date_range": "时间范围，例如 今日、本周、本月、2026年4月；没有则返回空字符串",
+  "type": "daily/weekly/monthly/quarterly/custom"
 }}
 
-【注意事项】
-- 只提取用户明确提到的内容，不要推测或补充
-- main_work、problems、next_plan 应保留用户描述的工作细节，适当分段便于阅读
-- 如果用户没有提到某项，返回空字符串
-- 直接返回 JSON，不要有任何额外文字"""
-
-
-def build_report_prompt_from_chat(params: dict) -> str:
-    """从对话提取的参数构建报告生成 prompt。"""
-    parts = []
-    if params.get("date_range"):
-        parts.append(f"时间范围：{params['date_range']}")
-    if params.get("main_work"):
-        parts.append(f"主要工作内容：{params['main_work']}")
-    if params.get("achievements"):
-        parts.append(f"工作成果：{params['achievements']}")
-    if params.get("problems"):
-        parts.append(f"遇到的问题：{params['problems']}")
-    if params.get("next_plan"):
-        parts.append(f"下一步计划：{params['next_plan']}")
-    return "\n\n".join(parts) if parts else "请生成一份工作报告。"
-
-
-def build_report_prompt_from_params(req) -> str:
-    """从 ReportGenerateRequest 构建报告生成 prompt。"""
-    parts = []
-    if req.date_range:
-        parts.append(f"时间范围：{req.date_range}")
-    if req.main_work:
-        parts.append(f"主要工作内容：{req.main_work}")
-    if req.achievements:
-        parts.append(f"工作成果或完成情况：{req.achievements}")
-    if req.problems:
-        parts.append(f"遇到的问题：{req.problems}")
-    if req.next_plan:
-        parts.append(f"下一步计划：{req.next_plan}")
-    if req.additional_info:
-        parts.append(f"补充信息：{req.additional_info}")
-    return "\n\n".join(parts) if parts else "请生成一份工作报告。"
+注意：
+- 只能返回 JSON 对象。
+- 不要添加用户没有提供的事实。
+- 不要把报告正文写在这里。"""
 
 
 def build_form_prompt(req) -> str:
-    parts = []
-    if req.date_range:
-        parts.append(f"时间范围：{req.date_range}")
-    if req.main_work:
-        parts.append(f"主要工作：{req.main_work}")
-    if req.achievements:
-        parts.append(f"工作成果：{req.achievements}")
-    if req.problems:
-        parts.append(f"遇到的问题：{req.problems}")
-    if req.next_plan:
-        parts.append(f"下一步计划：{req.next_plan}")
-    if req.additional_info:
-        parts.append(f"补充信息：{req.additional_info}")
-    return "\n\n".join(parts) if parts else "请生成一份工作报告。"
+    """构建表单模式报告 prompt。"""
+    return f"""报告类型：{getattr(req, "report_type", "weekly")}
+时间范围：{getattr(req, "date_range", "") or ""}
+主要工作：{getattr(req, "main_work", "") or ""}
+工作成果：{getattr(req, "achievements", "") or ""}
+存在问题：{getattr(req, "problems", "") or ""}
+后续计划：{getattr(req, "next_plan", "") or ""}
+补充信息：{getattr(req, "additional_info", "") or ""}"""
+
+
+def build_report_prompt_from_params(req) -> str:
+    """构建流式表单报告 prompt。"""
+    return build_form_prompt(req)
